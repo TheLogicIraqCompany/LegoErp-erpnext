@@ -1169,6 +1169,66 @@ class PurchaseInvoice(BuyingController):
 			if item.is_fixed_asset and item.landed_cost_voucher_amount:
 				self.update_gross_purchase_amount_for_linked_assets(item)
 
+<<<<<<< HEAD
+=======
+	def get_provisional_accounts(self):
+		self.provisional_accounts = frappe._dict()
+		linked_purchase_receipts = set([d.purchase_receipt for d in self.items if d.purchase_receipt])
+		pr_items = frappe.get_all(
+			"Purchase Receipt Item",
+			filters={"parent": ("in", linked_purchase_receipts)},
+			fields=["name", "provisional_expense_account", "qty", "base_rate", "rate"],
+		)
+		default_provisional_account = self.get_company_default("default_provisional_account")
+		provisional_accounts = set(
+			[
+				d.provisional_expense_account
+				if d.provisional_expense_account
+				else default_provisional_account
+				for d in pr_items
+			]
+		)
+
+		provisional_gl_entries = frappe.get_all(
+			"GL Entry",
+			filters={
+				"voucher_type": "Purchase Receipt",
+				"voucher_no": ("in", linked_purchase_receipts),
+				"account": ("in", provisional_accounts),
+				"is_cancelled": 0,
+			},
+			fields=["voucher_detail_no"],
+		)
+		rows_with_provisional_entries = [d.voucher_detail_no for d in provisional_gl_entries]
+		for item in pr_items:
+			self.provisional_accounts[item.name] = {
+				"provisional_account": item.provisional_expense_account or default_provisional_account,
+				"qty": item.qty,
+				"base_rate": item.base_rate,
+				"rate": item.rate,
+				"has_provisional_entry": item.name in rows_with_provisional_entries,
+			}
+
+	def make_provisional_gl_entry(self, gl_entries, item):
+		if item.purchase_receipt:
+			pr_item = self.provisional_accounts.get(item.pr_detail, {})
+			if pr_item.get("has_provisional_entry"):
+				purchase_receipt_doc = frappe.get_cached_doc("Purchase Receipt", item.purchase_receipt)
+
+				# Intentionally passing purchase invoice item to handle partial billing
+				purchase_receipt_doc.add_provisional_gl_entry(
+					item,
+					gl_entries,
+					self.posting_date,
+					pr_item.get("provisional_account"),
+					reverse=1,
+					item_amount=(
+						(min(item.qty, pr_item.get("qty")) * pr_item.get("rate"))
+						* purchase_receipt_doc.get("conversion_rate")
+					),
+				)
+
+>>>>>>> 1c0a24424a (fix: minor Dr and Cr between Purchase Receipt and Purchase Invoice)
 	def update_gross_purchase_amount_for_linked_assets(self, item):
 		assets = frappe.db.get_all(
 			"Asset",
